@@ -135,6 +135,11 @@ if num_cols:
 else:
     k4.metric("欄位數", len(filtered.columns))
 
+# 只有一種型態時，用行政區上色，圖表才有多種顏色
+multi_type = bool(type_col) and filtered[type_col].nunique() > 1
+color_col = type_col if multi_type else district_col
+PALETTE = COLORS + px.colors.qualitative.Safe + px.colors.qualitative.Vivid
+
 tabs = st.tabs(["🥧 總覽", "🏆 排行", "📊 數值分布", "🗺️ 地圖", "📋 資料表"])
 
 # ------------------------------------------------------------------
@@ -143,30 +148,32 @@ tabs = st.tabs(["🥧 總覽", "🏆 排行", "📊 數值分布", "🗺️ 地�
 with tabs[0]:
     left, right = st.columns(2)
     with left:
-        st.subheader("各型態占比")
-        if type_col:
-            cnt = filtered[type_col].value_counts().reset_index()
-            cnt.columns = [type_col, "數量"]
+        pie_col = type_col if multi_type else district_col
+        if pie_col:
+            st.subheader("各型態占比" if multi_type else "各行政區占比（前 10 名）")
+            cnt = filtered[pie_col].value_counts().head(10).reset_index()
+            cnt.columns = [pie_col, "數量"]
             fig = px.pie(
-                cnt, names=type_col, values="數量", hole=0.45,
-                color_discrete_sequence=COLORS,
+                cnt, names=pie_col, values="數量", hole=0.45,
+                color_discrete_sequence=PALETTE,
             )
             fig.update_traces(textinfo="label+percent")
             st.plotly_chart(fig, width="stretch")
         else:
-            st.info("找不到「停車場型態」欄位")
+            st.info("找不到可分類的欄位")
     with right:
         st.subheader("各行政區停車場數量")
         if district_col:
             cnt = (
-                filtered.groupby([district_col] + ([type_col] if type_col else []))
-                .size()
+                filtered.groupby(district_col).size()
                 .reset_index(name="數量")
+                .sort_values("數量", ascending=False)
             )
             fig = px.bar(
-                cnt, x=district_col, y="數量", color=type_col,
-                color_discrete_sequence=COLORS,
+                cnt, x=district_col, y="數量", color=district_col, text="數量",
+                color_discrete_sequence=PALETTE,
             )
+            fig.update_layout(showlegend=False)
             st.plotly_chart(fig, width="stretch")
         else:
             st.info("找不到「地址」欄位，無法統計行政區")
@@ -185,7 +192,7 @@ with tabs[1]:
         else:
             fig = px.bar(
                 top.sort_values(metric), x=metric, y=name_col, orientation="h",
-                color=type_col, color_discrete_sequence=COLORS,
+                color=color_col, color_discrete_sequence=PALETTE,
             )
             fig.update_layout(height=max(350, top_n * 32))
             st.plotly_chart(fig, width="stretch")
@@ -207,18 +214,18 @@ with tabs[2]:
                 st.subheader("直方圖")
                 st.plotly_chart(
                     px.histogram(
-                        data, x=metric, nbins=20, color=type_col,
-                        color_discrete_sequence=COLORS,
+                        data, x=metric, nbins=20, color=color_col,
+                        color_discrete_sequence=PALETTE,
                     ),
                     width="stretch",
                 )
             with b:
-                st.subheader("各型態箱型圖")
+                st.subheader("各型態箱型圖" if multi_type else "各行政區箱型圖")
                 st.plotly_chart(
                     px.box(
-                        data, x=type_col, y=metric, color=type_col,
-                        color_discrete_sequence=COLORS,
-                    ) if type_col else px.box(data, y=metric),
+                        data, x=color_col, y=metric, color=color_col,
+                        color_discrete_sequence=PALETTE,
+                    ) if color_col else px.box(data, y=metric),
                     width="stretch",
                 )
         if len(num_cols) >= 2:
@@ -228,8 +235,8 @@ with tabs[2]:
             yc = y.selectbox("Y 軸", num_cols, index=1, key="sy")
             st.plotly_chart(
                 px.scatter(
-                    filtered, x=xc, y=yc, color=type_col, hover_name=name_col,
-                    color_discrete_sequence=COLORS,
+                    filtered, x=xc, y=yc, color=color_col, hover_name=name_col,
+                    color_discrete_sequence=PALETTE,
                 ),
                 width="stretch",
             )
